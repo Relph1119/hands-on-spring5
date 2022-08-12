@@ -5,6 +5,7 @@
 在线阅读地址：https://relph1119.github.io/hands-on-spring5
 
 ## 环境安装
+Java版本：1.8
 
 ### 本地启动docsify
 ```shell

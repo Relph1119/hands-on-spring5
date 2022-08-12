@@ -1,0 +1,379 @@
+package com.teapot.mvcframework.v3.servlet;
+
+import com.teapot.mvcframework.annotation.*;
+
+import javax.servlet.ServletConfig;
+import javax.servlet.ServletException;
+import javax.servlet.http.HttpServlet;
+import javax.servlet.http.HttpServletRequest;
+import javax.servlet.http.HttpServletResponse;
+import java.io.File;
+import java.io.IOException;
+import java.io.InputStream;
+import java.lang.annotation.Annotation;
+import java.lang.reflect.Field;
+import java.lang.reflect.Method;
+import java.net.URL;
+import java.util.*;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+
+public class TPDispatcherServlet extends HttpServlet {
+    // 保存application.properties文件中的内容
+    private Properties contextConfig = new Properties();
+
+    // 保存扫描的所有的类名
+    private List<String> classNames = new ArrayList<String>();
+
+    // 传说中的IoC容器
+    // 为了简化程序，暂时不考虑ConcurrentHashMap
+    // 主要还是关注设计思想和原理
+    private Map<String, Object> ioc = new HashMap<String, Object>();
+
+    // 保存url和Method的对应关系
+    private List<Handler> handlerMapping = new ArrayList<Handler>();
+
+    @Override
+    protected void doGet(HttpServletRequest req, HttpServletResponse resp) throws ServletException, IOException {
+        this.doPost(req, resp);
+    }
+
+    @Override
+    protected void doPost(HttpServletRequest req, HttpServletResponse resp) throws ServletException, IOException {
+        try {
+            doDispatch(req, resp);
+        } catch (Exception e) {
+            resp.getWriter().write("500 Exception " + Arrays.toString(e.getStackTrace()));
+        }
+    }
+
+    private void doDispatch(HttpServletRequest req, HttpServletResponse resp) throws Exception {
+        Handler handler = getHandler(req);
+
+        if (handler == null) {
+            resp.getWriter().write("404 Not Found");
+            return;
+        }
+
+        // 获取方法的形参列表
+        Class<?>[] paramTypes = handler.method.getParameterTypes();
+        // 保存请求的url参数列表
+        Map<String, String[]> params = req.getParameterMap();
+        // 保存赋值参数的位置
+        Object[] paramValues = new Object[paramTypes.length];
+
+        for (Map.Entry<String, String[]> param : params.entrySet()) {
+            String value = Arrays.toString(param.getValue()).replaceAll("\\[|\\]", "")
+                    .replaceAll("\\s", "");
+
+            if (!handler.paramIndexMapping.containsKey(param.getKey())) {
+                continue;
+            }
+
+            int index = handler.paramIndexMapping.get(param.getKey());
+            paramValues[index] = convert(paramTypes[index], value);
+        }
+
+        if (handler.paramIndexMapping.containsKey(HttpServletRequest.class.getName())) {
+            int reqIndex = handler.paramIndexMapping.get(HttpServletRequest.class.getName());
+            paramValues[reqIndex] = req;
+        }
+
+        if (handler.paramIndexMapping.containsKey(HttpServletResponse.class.getName())) {
+            int respIndex = handler.paramIndexMapping.get(HttpServletResponse.class.getName());
+            paramValues[respIndex] = resp;
+        }
+
+        Object returnValue = handler.method.invoke(handler.controller, paramValues);
+        if (returnValue == null || returnValue instanceof Void) {
+            return;
+        }
+        resp.getWriter().write(returnValue.toString());
+    }
+
+    private Handler getHandler(HttpServletRequest req) throws Exception {
+        if (handlerMapping.isEmpty()) {
+            return null;
+        }
+        String url = req.getRequestURI();
+        String contextPath = req.getContextPath();
+        url = url.replace(contextPath, "").replaceAll("/+", "/");
+        for (Handler handler : handlerMapping) {
+            try {
+                Matcher matcher = handler.pattern.matcher(url);
+                if (!matcher.matches()) {
+                    continue;
+                }
+                return handler;
+            } catch (Exception e) {
+                throw e;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * url传过来的参数都是String类型的，由于HTTP基于字符串协议
+     * 只需要把String转换为任意类型
+     *
+     * @param type
+     * @param value
+     * @return
+     */
+    private Object convert(Class<?> type, String value) {
+        if (Integer.class == type) {
+            return Integer.valueOf(value);
+        }
+        return value;
+    }
+
+    @Override
+    public void init(ServletConfig config) throws ServletException {
+
+        // (1)加载配置文件
+        doLoadConfig(config.getInitParameter("contextConfigLocation"));
+
+        // (2)扫描相关的类
+        doScanner(contextConfig.getProperty("scanPackage"));
+
+        // (3)初始化扫描到的类，并将它们放入IoC容器中
+        doInstance();
+
+        // (4)完成依赖注入
+        doAutowired();
+
+        // (5)初始化HandleMapping
+        initHandlerMapping();
+
+        System.out.println("TP MVC Framework is init");
+    }
+
+    /**
+     * 初始化url和Method的映射关系
+     */
+    private void initHandlerMapping() {
+        if (ioc.isEmpty()) {
+            return;
+        }
+
+        for (Map.Entry<String, Object> entry : ioc.entrySet()) {
+            Class<?> clazz = entry.getValue().getClass();
+            if (!clazz.isAnnotationPresent(TPController.class)) {
+                continue;
+            }
+
+            String url = "";
+            if (clazz.isAnnotationPresent((TPRequestMapping.class))) {
+                TPRequestMapping requestMapping = clazz.getAnnotation(TPRequestMapping.class);
+                url = requestMapping.value();
+            }
+
+            // 默认获取所有public类型的方法
+            for (Method method : clazz.getMethods()) {
+                // 没有加RequestMapping注解的直接忽略
+                if (!method.isAnnotationPresent(TPRequestMapping.class)) {
+                    continue;
+                }
+                TPRequestMapping requestMapping = method.getAnnotation(TPRequestMapping.class);
+                String regex = ("/" + url + requestMapping.value()).replaceAll("/+", "/");
+                Pattern pattern = Pattern.compile(regex);
+
+                // 保存url和method的映射关系
+                handlerMapping.add(new Handler(pattern, entry.getValue(), method));
+                System.out.println("Mapped " + url + "," + method);
+            }
+        }
+    }
+
+    /**
+     * 自动进行依赖注入
+     */
+    private void doAutowired() {
+        if (ioc.isEmpty()) {
+            return;
+        }
+
+        for (Map.Entry<String, Object> entry : ioc.entrySet()) {
+            // 获取所有的字段，包括private、protected、default类型
+            // 普通OOP编程只能获得public类型的字段
+            Field[] fields = entry.getValue().getClass().getDeclaredFields();
+            for (Field field : fields) {
+                if (!field.isAnnotationPresent(TPAutowired.class)) {
+                    continue;
+                }
+
+                TPAutowired autowired = field.getAnnotation(TPAutowired.class);
+                // 如果用户没有自定义beanName，默认根据类型注入
+                String beanName = autowired.value().trim();
+                if ("".equals(beanName)) {
+                    // 获取接口的类型，作为key
+                    beanName = field.getType().getName();
+                }
+                // 如果是public以外的类型，只要加了@Autowired注解都要强制赋值
+                field.setAccessible(true);
+                try {
+                    // 根据key到IoC容器中取值
+                    field.set(entry.getValue(), ioc.get(beanName));
+                } catch (IllegalAccessException e) {
+                    e.printStackTrace();
+                }
+            }
+        }
+    }
+
+    /**
+     * 初始化扫描到的类，并将它们放入IoC容器中
+     * 使用工厂模式实现
+     */
+    private void doInstance() {
+        if (classNames.isEmpty()) {
+            return;
+        }
+
+        try {
+            for (String className : classNames) {
+                Class<?> clazz = Class.forName(className);
+
+                // 需要思考
+                // (1)什么样的类才需要初始化
+                // (2)加了注解的类才初始化，那要如何判断呢？
+                if (clazz.isAnnotationPresent(TPController.class)) {
+                    Object instance = clazz.newInstance();
+                    String beanName = toLowerfirstCase(className);
+                    ioc.put(beanName, instance);
+                } else if (clazz.isAnnotationPresent(TPService.class)) {
+                    // (1) 自定义的beanName
+                    TPService service = clazz.getAnnotation(TPService.class);
+                    String beanName = service.value();
+
+                    // (2) 默认类名首字母小写
+                    if ("".equals(beanName.trim())) {
+                        beanName = toLowerfirstCase(clazz.getSimpleName());
+                    }
+                    Object instance = clazz.newInstance();
+                    ioc.put(beanName, instance);
+
+                    // （3）根据类型自动赋值
+                    for (Class<?> i : clazz.getInterfaces()) {
+                        if (ioc.containsKey(i.getName())) {
+                            throw new Exception("The " + i.getName() + " is exists!!!");
+                        }
+                        ioc.put(i.getName(), instance);
+                    }
+                } else {
+                    continue;
+                }
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
+
+    /**
+     * 将类名首字母改为小写
+     *
+     * @param simpleName 类名
+     * @return
+     */
+    private String toLowerfirstCase(String simpleName) {
+        char[] chars = simpleName.toCharArray();
+        // 大写字母的ASCII码要小于小写字母的ASCII
+        // 在Java中，对char做算术运算实际上就是对ASCII码做算术运算
+        if (Character.isLowerCase(chars[0])) {
+            return simpleName;
+        }
+        chars[0] += 32;
+        return String.valueOf(chars);
+    }
+
+    /**
+     * 加载配置文件
+     *
+     * @param contextConfigLocation
+     */
+    private void doLoadConfig(String contextConfigLocation) {
+        // 直接通过类路径找到Sping主配置文件所在的路径
+        // 并且将其读取出来放到Properties对象中
+        // 相当于将 scanPackage=com.teapot.demo 保存到了内存中
+        InputStream fis = this.getClass().getClassLoader().getResourceAsStream(contextConfigLocation);
+        try {
+            contextConfig.load(fis);
+        } catch (IOException e) {
+            e.printStackTrace();
+        } finally {
+            if (fis != null) {
+                try {
+                    fis.close();
+                } catch (IOException e) {
+                    e.printStackTrace();
+                }
+            }
+        }
+    }
+
+    /**
+     * 扫描相关的类
+     *
+     * @param scanPackage 包路径，com.teapot.demo
+     */
+    private void doScanner(String scanPackage) {
+        // 转换为文件路径，实际上就是把.替换为/
+        URL url = this.getClass().getClassLoader().getResource(
+                "/" + scanPackage.replaceAll("\\.", "/"));
+        File classDir = new File(url.getFile());
+        for (File file : classDir.listFiles()) {
+            if (file.isDirectory()) {
+                doScanner(scanPackage + "." + file.getName());
+            } else {
+                if (!file.getName().endsWith(".class")) {
+                    continue;
+                }
+                String clazzName = (scanPackage + "." + file.getName().replace(".class", ""));
+                classNames.add(clazzName);
+            }
+        }
+    }
+
+    private class Handler {
+        // 方法对应的实例
+        protected Object controller;
+        // 映射的方法
+        protected Method method;
+        protected Pattern pattern;
+        // 参数顺序
+        protected Map<String, Integer> paramIndexMapping;
+
+        public Handler(Pattern pattern, Object controller, Method method) {
+            this.controller = controller;
+            this.method = method;
+            this.pattern = pattern;
+            paramIndexMapping = new HashMap<String, Integer>();
+            putParamIndexMapping(method);
+        }
+
+        private void putParamIndexMapping(Method method) {
+            // 提取方法中加了注解的参数
+            Annotation[][] pa = method.getParameterAnnotations();
+            for (int i = 0; i < pa.length; i++) {
+                for (Annotation a : pa[i]) {
+                    if (a instanceof TPRequestParam) {
+                        String paramName = ((TPRequestParam) a).value();
+                        if (!"".equals(paramName.trim())) {
+                            paramIndexMapping.put(paramName, i);
+                        }
+                    }
+                }
+            }
+
+            // 提取方法中的request和response参数
+            Class<?>[] paramsTypes = method.getParameterTypes();
+            for (int i = 0; i < paramsTypes.length; i++) {
+                Class<?> type = paramsTypes[i];
+                if (type == HttpServletRequest.class || type == HttpServletResponse.class) {
+                    paramIndexMapping.put(type.getName(), i);
+                }
+            }
+        }
+
+    }
+}
