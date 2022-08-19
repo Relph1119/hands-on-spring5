@@ -7,3 +7,4 @@
     * [第8章 一步一步手绘Spring IoC运行时序图](contents/ch08.md)
     * [第9章 一步一步手绘Spring DI运行时序图](contents/ch09.md)
     * [第10章 一步一步手绘Spring AOP运行时序图](contents/ch10.md)
+    * [第11章 一步一步手绘Spring MVC运行时序图](contents/ch11.md)
