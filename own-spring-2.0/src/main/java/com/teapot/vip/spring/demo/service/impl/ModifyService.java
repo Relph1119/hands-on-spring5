@@ -1,14 +1,15 @@
 package com.teapot.vip.spring.demo.service.impl;
 
-import com.gupaoedu.vip.spring.demo.service.IModifyService;
-import com.gupaoedu.vip.spring.formework.annotation.GPService;
+
+import com.teapot.vip.spring.demo.service.IModifyService;
+import com.teapot.vip.spring.framework.annotation.TPService;
 
 /**
  * 增删改业务
  * @author Tom
  *
  */
-@GPService
+@TPService
 public class ModifyService implements IModifyService {
 
 	/**

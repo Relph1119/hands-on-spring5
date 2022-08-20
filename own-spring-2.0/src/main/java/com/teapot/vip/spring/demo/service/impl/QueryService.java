@@ -1,7 +1,7 @@
 package com.teapot.vip.spring.demo.service.impl;
 
-import com.gupaoedu.vip.spring.demo.service.IQueryService;
-import com.gupaoedu.vip.spring.formework.annotation.GPService;
+import com.teapot.vip.spring.demo.service.IQueryService;
+import com.teapot.vip.spring.framework.annotation.TPService;
 import lombok.extern.slf4j.Slf4j;
 
 import java.text.SimpleDateFormat;
@@ -12,7 +12,7 @@ import java.util.Date;
  * @author Tom
  *
  */
-@GPService
+@TPService
 @Slf4j
 public class QueryService implements IQueryService {
 
