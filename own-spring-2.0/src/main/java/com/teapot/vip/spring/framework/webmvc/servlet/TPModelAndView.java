@@ -5,11 +5,24 @@ import java.util.Map;
 
 public class TPModelAndView {
 
-    private String code;
-    Map<String,Object> model = new HashMap<String,Object>();
+    private String viewName;
+    private Map<String,?> model;
 
-    public TPModelAndView(String code, Map<String, Object> model) {
-        this.code = code;
+    public TPModelAndView(String viewName) {
+        this.viewName = viewName;
+    }
+
+    public TPModelAndView(String viewName, Map<String, Object> model) {
+        this.viewName = viewName;
         this.model = model;
+    }
+
+    public String getViewName() {
+        return viewName;
+    }
+
+
+    public Map<String, ?> getModel() {
+        return model;
     }
 }

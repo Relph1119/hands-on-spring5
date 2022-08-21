@@ -13,6 +13,7 @@ import com.teapot.vip.spring.framework.beans.support.TPDefaultListableBeanFactor
 import java.lang.reflect.Field;
 import java.util.List;
 import java.util.Map;
+import java.util.Properties;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
@@ -175,5 +176,17 @@ public class TPApplicationContext extends TPDefaultListableBeanFactory implement
         }
 
         return instance;
+    }
+
+    public String[] getBeanDefinitionNames() {
+        return this.beanDefinitionMap.keySet().toArray(new String[this.beanDefinitionMap.size()]);
+    }
+
+    public int getBeanDefinitionCount() {
+        return this.beanDefinitionMap.size();
+    }
+
+    public Properties getConfig() {
+        return this.reader.getConfig();
     }
 }
