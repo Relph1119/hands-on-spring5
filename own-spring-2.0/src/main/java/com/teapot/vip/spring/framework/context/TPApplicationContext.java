@@ -3,6 +3,11 @@ package com.teapot.vip.spring.framework.context;
 import com.teapot.vip.spring.framework.annotation.TPAutowired;
 import com.teapot.vip.spring.framework.annotation.TPController;
 import com.teapot.vip.spring.framework.annotation.TPService;
+import com.teapot.vip.spring.framework.aop.TPAopProxy;
+import com.teapot.vip.spring.framework.aop.TPCglibAopProxy;
+import com.teapot.vip.spring.framework.aop.TPJdkDynamicAopProxy;
+import com.teapot.vip.spring.framework.aop.config.TPAopConfig;
+import com.teapot.vip.spring.framework.aop.support.TPAdvisedSupport;
 import com.teapot.vip.spring.framework.beans.config.TPBeanPostProcessor;
 import com.teapot.vip.spring.framework.core.TPBeanFactory;
 import com.teapot.vip.spring.framework.beans.TPBeanWrapper;
@@ -166,6 +171,16 @@ public class TPApplicationContext extends TPDefaultListableBeanFactory implement
             } else {
                 Class<?> clazz = Class.forName(className);
                 instance = clazz.newInstance();
+
+                TPAdvisedSupport config = instantionAopConfig(beanDefinition);
+                config.setTargetClass(clazz);
+                config.setTarget(instance);
+
+                // 如果符合PointCut的规则，就创建代理对象
+                if(config.pointCutMatch()) {
+                    instance = createProxy(config).getProxy();
+                }
+
                 // 根据ClassName
                 this.singletonObjects.put(className, instance);
                 // 根据FactoryBeanName
@@ -176,6 +191,28 @@ public class TPApplicationContext extends TPDefaultListableBeanFactory implement
         }
 
         return instance;
+    }
+
+    // 创建代理策略
+    private TPAopProxy createProxy(TPAdvisedSupport config) {
+        Class targetClass = config.getTargetClass();
+        if (targetClass.getInterfaces().length > 0) {
+            return new TPJdkDynamicAopProxy(config);
+        }
+
+        return new TPCglibAopProxy(config);
+    }
+
+    private TPAdvisedSupport instantionAopConfig(TPBeanDefinition beanDefinition) {
+        TPAopConfig config = new TPAopConfig();
+        config.setPointCut(this.reader.getConfig().getProperty("pointCut"));
+        config.setAspectClass(this.reader.getConfig().getProperty("aspectClass"));
+        config.setAspectBefore(this.reader.getConfig().getProperty("aspectBefore"));
+        config.setAspectAfter(this.reader.getConfig().getProperty("aspectAfter"));
+        config.setAspectAfterThrow(this.reader.getConfig().getProperty("aspectAfterThrow"));
+        config.setAspectAfterThrowingName(this.reader.getConfig().getProperty("aspectAfterThrowingName"));
+
+        return new TPAdvisedSupport(config);
     }
 
     public String[] getBeanDefinitionNames() {
