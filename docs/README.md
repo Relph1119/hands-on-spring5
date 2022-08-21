@@ -13,11 +13,11 @@ docsify serve ./docs
 ```
 
 ## 视频中的问题
-1. 视频部分有些颠倒，在P36之后建议直接跳到P44~P51（Spring MVC），看完这部分之后，再回到P37~P43（Spring AOP），之后再看P52之后的部分。
+1. 视频部分有些颠倒，在P36之后建议直接跳到P44\~P51（Spring MVC），看完这部分之后，再回到P37\~P43（Spring AOP），之后再看P52之后的部分。
 2. 视频内容
-    - P1~P18：完成Spring顶层设计、Spring IoC容器
-    - P19~P24：完成Spring DI（依赖注入）
-    - P25~P28：使用Test类进行调试ApplicationContext
-    - P28~P29：完成PostProcessor 
-    - P30~P36、P44~P51：完成Spring MVC
-    - P37~P43、P52~P67：完成Spring AOP：打通Spring IoC和DI，完成Before、AfterReturning、AfterThrowing，完成调试
+   - P1\~P18：完成Spring顶层设计、Spring IoC容器
+   - P19\~P24：完成Spring DI（依赖注入）
+   - P25\~P28：使用Test类进行调试ApplicationContext
+   - P28\~P29：完成PostProcessor
+   - P30\~P36、P44\~P51：完成Spring MVC
+   - P37\~P43、P52\~P67：完成Spring AOP：打通Spring IoC和DI，完成Before、AfterReturning、AfterThrowing，完成调试
